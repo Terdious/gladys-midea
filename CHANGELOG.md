@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-13
+
 ### Added
 
 - Local control of Midea air conditioners (appliance type `0xAC`) and of the
@@ -37,4 +39,5 @@ the notes of the version's GitHub Release.
   "Mode and fan" buttons.
 - Names, messages and documentation in English, French, German and Spanish.
 
-[Unreleased]: https://github.com/guim31/gladys-midea/commits/main
+[Unreleased]: https://github.com/guim31/gladys-midea/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/guim31/gladys-midea/releases/tag/v1.0.1
