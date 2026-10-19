@@ -12,6 +12,13 @@ the notes of the version's GitHub Release.
 
 ### Added
 
+- Widget "Midea unit" (key `climate`, formerly "Air conditioner"): a heat pump
+  view beside the air conditioner's, chosen from the kind of the unit. It shows
+  zone 1's setpoint, tank and outdoor temperatures, what runs (each zone, hot
+  water, compressor, defrosting, backup heater), the power draw and the COP
+  since the counters started; buttons for zone 1 on/off and setpoint, and a
+  form for the mode, the hot water, its setpoint and eco mode (the zone and
+  the hot water in one frame).
 - Air-to-water heat pumps (Midea appliance type `0xC3`, "Heat Pump Wi-Fi
   Controller" such as the 171H120F), ported from midea-local: one Gladys device
   per heat pump with the mode and setpoint of each heating zone (thermostat),
