@@ -1,8 +1,10 @@
 // -----------------------------------------------------------------------------
-// The Midea hub: finds the air conditioners, gets the keys of the V3 units
-// (once, from the Midea cloud), reads every unit at the configured pace,
-// publishes devices and states to Gladys, runs the commands and fires the
-// scene triggers.
+// The Midea hub: finds the air conditioners and the air-to-water heat pumps,
+// gets the keys of the V3 units (once, from the Midea cloud), reads every
+// unit at the configured pace, publishes devices and states to Gladys, runs
+// the commands and fires the scene triggers. Both kinds share discovery,
+// keys and sessions; each record takes the path of its appliance type
+// (`record.type`, 0xAC or 0xC3) for the frames and the Gladys device.
 //
 // Polling by the container's own timer: the core polls external devices
 // unreliably (GladysAssistant/Gladys#3198), so the devices are published
@@ -30,12 +32,33 @@ import {
   setStateCommand,
   summarizeCapabilities,
 } from './midea/ac.js';
+import {
+  BODY_TYPE,
+  SILENT_LEVEL,
+  answersBody,
+  decodeC3Response,
+  getApplianceCommand,
+  getQueryCommand,
+  isApplianceAnswer,
+  setBasicCommand,
+  setEcoCommand,
+  setSilentCommand,
+} from './midea/c3.js';
 import { NetHomePlusCloud } from './midea/cloud.js';
 import { DISCOVERY_PORTS, DISCOVERY_REQUEST, parseDiscoveryReply } from './midea/discovery.js';
 import { APPLIANCE } from './midea/frame.js';
 import { MideaLan } from './midea/lan.js';
 import { udpId } from './midea/security.js';
 import { probeHost } from './midea/udp.js';
+import {
+  buildHeatPump,
+  heatPumpCommand,
+  heatPumpFeatureSpecs,
+  heatPumpIds,
+  heatPumpName,
+  heatPumpValues,
+  summarizeHeatPump,
+} from './heatpump.js';
 import { ProblemLog } from './problems.js';
 import { CONNECTION_TEXT } from './texts.js';
 
@@ -68,6 +91,9 @@ const WIDGET_KEYS = [
   FEATURE_KEYS.FAN_SPEED,
   FEATURE_KEYS.TARGET_TEMPERATURE,
 ];
+
+const SUPPORTED = [APPLIANCE.AIR_CONDITIONER, APPLIANCE.HEAT_PUMP];
+export const isHeatPump = (record) => record.type === APPLIANCE.HEAT_PUMP;
 
 const isState = (frame) => frame[10] === RESPONSE_ID.STATE;
 const isCapabilities = (frame) => frame[10] === RESPONSE_ID.CAPABILITIES && frame[9] === 0x03;
@@ -167,7 +193,9 @@ export class MideaHub {
   async reconfigure(config) {
     const previous = this.config;
     this.applyConfig(config);
-    const cloudChanged = JSON.stringify(previous?.cloud) !== JSON.stringify(config.cloud);
+    const cloudChanged =
+      JSON.stringify(previous?.cloud) !== JSON.stringify(config.cloud) ||
+      JSON.stringify(previous?.manualKeys) !== JSON.stringify(config.manualKeys);
     if (cloudChanged) {
       // Units without keys may get them with the new account or region.
       for (const record of this.records.values()) {
@@ -259,7 +287,8 @@ export class MideaHub {
         !saved ||
         !Number.isSafeInteger(saved.id) ||
         typeof saved.host !== 'string' ||
-        ![2, 3].includes(saved.version)
+        ![2, 3].includes(saved.version) ||
+        !SUPPORTED.includes(saved.type ?? APPLIANCE.AIR_CONDITIONER)
       ) {
         continue;
       }
@@ -269,10 +298,18 @@ export class MideaHub {
         rawCaps: saved.rawCaps ?? null,
         capsQueried: saved.capsQueried === true,
         hasOutdoor: saved.hasOutdoor === true,
+        hasEnergy: saved.hasEnergy === true,
+        protocol: Number.isInteger(saved.protocol) ? saved.protocol : null,
         filterAlert: typeof saved.filterAlert === 'boolean' ? saved.filterAlert : null,
         errorCode: Number.isInteger(saved.errorCode) ? saved.errorCode : null,
       });
-      record.caps = summarizeCapabilities(record.rawCaps);
+      if (isHeatPump(record)) {
+        // A heat pump keeps its summary (src/heatpump.js) as its capabilities.
+        record.caps = record.rawCaps?.known ? record.rawCaps : null;
+        record.capsQueried = record.capsQueried && record.caps !== null;
+      } else {
+        record.caps = summarizeCapabilities(record.rawCaps);
+      }
       this.records.set(record.id, record);
     }
   }
@@ -293,6 +330,8 @@ export class MideaHub {
         rawCaps: record.rawCaps,
         capsQueried: record.capsQueried,
         hasOutdoor: record.hasOutdoor,
+        hasEnergy: record.hasEnergy,
+        protocol: record.protocol,
         filterAlert: record.filterAlert,
         errorCode: record.errorCode,
       };
@@ -316,10 +355,16 @@ export class MideaHub {
       keyProblem: null,
       rawCaps: null,
       capsQueried: false,
-      caps: summarizeCapabilities(null),
+      caps: null,
       state: null,
       energy: null,
       humidity: null,
+      // Heat pumps: the unit parameters, whether the energy notification
+      // came once, and the message protocol of the unit's appliance answer
+      // (null until asked).
+      unit: null,
+      hasEnergy: false,
+      protocol: null,
       hasOutdoor: false,
       filterAlert: null,
       errorCode: null,
@@ -331,6 +376,7 @@ export class MideaHub {
       lastPolledAt: 0,
       published: {},
     };
+    record.caps = isHeatPump(record) ? null : summarizeCapabilities(null);
     record.lan = this.createLan({
       host: record.host,
       port: record.port,
@@ -338,6 +384,10 @@ export class MideaHub {
       version: record.version,
       credentials: null,
       logger: createLogger({ name: 'midea-lan' }),
+      // A heat pump pushes its state and energy counters between the reads.
+      onUnsolicited: isHeatPump(record)
+        ? (frame) => this.track(this.heatPumpPush(record, frame))
+        : undefined,
     });
     return record;
   }
@@ -366,7 +416,7 @@ export class MideaHub {
         continue;
       }
       seen.add(info.deviceId);
-      if (info.type !== APPLIANCE.AIR_CONDITIONER) {
+      if (!SUPPORTED.includes(info.type)) {
         if (!this.unsupported.has(info.deviceId)) {
           logger.info(
             `Midea appliance of type 0x${info.type.toString(16)} at ${info.host}: not supported`,
@@ -433,8 +483,9 @@ export class MideaHub {
     if (!record) {
       record = this.createRecord(info);
       this.records.set(record.id, record);
+      const kind = isHeatPump(record) ? 'heat pump' : 'air conditioner';
       logger.info(
-        `Midea air conditioner ${info.ssid || info.deviceId} (V${info.version}) found at ${info.host}`,
+        `Midea ${kind} ${info.ssid || info.deviceId} (V${info.version}) found at ${info.host}`,
       );
       return record;
     }
@@ -498,17 +549,46 @@ export class MideaHub {
     }
   }
 
+  /** The read that checks a session: the state query of the unit's kind. */
+  async probe(record) {
+    if (!isHeatPump(record)) {
+      return record.lan.request(getStateCommand(), isState);
+    }
+    if (record.protocol === null) {
+      // The appliance answer gives the message protocol of every later frame;
+      // like midea-local, a unit that does not answer gets protocol 0.
+      const appliance = await record.lan.request(getApplianceCommand(), isApplianceAnswer, {
+        optional: true,
+        retries: 1,
+      });
+      record.protocol = appliance ? decodeC3Response(appliance).protocol : 0;
+    }
+    return record.lan.request(
+      getQueryCommand(BODY_TYPE.BASIC, { protocol: record.protocol }),
+      answersBody(BODY_TYPE.BASIC),
+    );
+  }
+
   /**
-   * The token and key of a V3 unit, from the Midea cloud. Both byte orders of
-   * the udpid are tried, each pair checked by a real handshake.
+   * The token and key of a V3 unit: the pairs typed in the configuration
+   * first, then the Midea cloud (both byte orders of the udpid). Each pair is
+   * checked by a real handshake.
    */
   async fetchKeys(record) {
-    this.cloud ??= this.createCloud(this.config.cloud);
+    const cloud = (endian) => () => {
+      this.cloud ??= this.createCloud(this.config.cloud);
+      return this.cloud.getToken(udpId(record.id, endian), record.id);
+    };
+    const attempts = [
+      ...(this.config.manualKeys ?? []).map((pair) => ({ typed: true, get: async () => pair })),
+      { typed: false, get: cloud('little') },
+      { typed: false, get: cloud('big') },
+    ];
     let lastError = null;
-    for (const endian of ['little', 'big']) {
+    for (const attempt of attempts) {
       let credentials;
       try {
-        credentials = await this.cloud.getToken(udpId(record.id, endian), record.id);
+        credentials = await attempt.get();
       } catch (err) {
         lastError = err;
         if (err.network) {
@@ -519,10 +599,12 @@ export class MideaHub {
       }
       record.lan.update({ credentials });
       try {
-        await record.lan.request(getStateCommand(), isState);
+        await this.probe(record);
       } catch (err) {
         lastError = err;
-        if (err.auth) {
+        // A typed pair may belong to another unit, and some modules ignore a
+        // wrong token instead of refusing it: never keep one unchecked.
+        if (err.auth || attempt.typed) {
           continue;
         }
         // Unreachable right now: keep the keys, checked at the next contact
@@ -534,7 +616,11 @@ export class MideaHub {
       record.credentials = credentials;
       record.keyProblem = null;
       this.problems.recover(`keys:${record.id}`, `${this.label(record)} has its keys`);
-      logger.info(`Keys of ${this.label(record)} fetched from the Midea cloud and saved`);
+      logger.info(
+        attempt.typed
+          ? `${this.label(record)} accepts a token and key typed in the configuration`
+          : `Keys of ${this.label(record)} fetched from the Midea cloud and saved`,
+      );
       await this.save();
       return;
     }
@@ -550,6 +636,10 @@ export class MideaHub {
   }
 
   async queryCapabilities(record) {
+    if (isHeatPump(record)) {
+      await this.queryHeatPump(record);
+      return;
+    }
     let raw = null;
     try {
       const first = decodeResponse(
@@ -578,6 +668,38 @@ export class MideaHub {
     record.capsQueried = true;
   }
 
+  /**
+   * What a heat pump has: its basic state (zones, hot water, limits) and
+   * whether it answers the unit parameters query.
+   */
+  async queryHeatPump(record) {
+    const basic = decodeC3Response(await this.probe(record)).state;
+    const unit = await this.queryHeatPumpUnit(record);
+    record.state = basic;
+    record.unit = unit;
+    record.rawCaps = summarizeHeatPump(basic, { unit: unit !== null });
+    record.caps = record.rawCaps;
+    record.capsQueried = true;
+  }
+
+  /** The unit parameters, or null when the unit does not answer them. */
+  async queryHeatPumpUnit(record) {
+    const answer = await record.lan.request(
+      getQueryCommand(BODY_TYPE.UNIT, { protocol: record.protocol }),
+      answersBody(BODY_TYPE.UNIT),
+      { optional: true, retries: 1 },
+    );
+    if (!answer) {
+      return null;
+    }
+    try {
+      return decodeC3Response(answer).unit;
+    } catch (err) {
+      logger.debug(`${this.label(record)}: ${err.message}`);
+      return null;
+    }
+  }
+
   /** The "Search" action: also asks the cloud again for the units without keys. */
   async search() {
     for (const record of this.records.values()) {
@@ -602,7 +724,9 @@ export class MideaHub {
 
   async publishDevices() {
     const devices = this.publishable().map((record) =>
-      buildDevice(this.gladys, record, this.config.language),
+      isHeatPump(record)
+        ? buildHeatPump(this.gladys, record, this.config.language)
+        : buildDevice(this.gladys, record, this.config.language),
     );
     await this.gladys.publishDiscoveredDevices(devices);
   }
@@ -612,29 +736,45 @@ export class MideaHub {
     if (typeof externalId !== 'string') {
       return null;
     }
-    const prefix = deviceIds(this.gladys, '').device;
-    if (!externalId.startsWith(prefix)) {
-      return null;
+    for (const [prefix, heatPump] of [
+      [deviceIds(this.gladys, '').device, false],
+      [heatPumpIds(this.gladys, '').device, true],
+    ]) {
+      if (externalId.startsWith(prefix)) {
+        const record = this.records.get(Number(externalId.slice(prefix.length)));
+        return record && isHeatPump(record) === heatPump ? record : null;
+      }
     }
-    const id = Number(externalId.slice(prefix.length));
-    return this.records.get(id) ?? null;
+    return null;
+  }
+
+  /** The Gladys external ids of a unit. */
+  ids(record) {
+    return isHeatPump(record)
+      ? heatPumpIds(this.gladys, record.id)
+      : deviceIds(this.gladys, record.id);
+  }
+
+  /** The name of a unit's device in a language. */
+  name(record, language) {
+    return isHeatPump(record) ? heatPumpName(record, language) : deviceName(record, language);
   }
 
   require(externalId) {
     const record = this.resolveDevice(externalId);
     if (!record) {
-      throw new Error(`Unknown Midea air conditioner ${externalId}`);
+      throw new Error(`Unknown Midea device ${externalId}`);
     }
     return record;
   }
 
   isCreated(record) {
-    const id = deviceIds(this.gladys, record.id).device;
+    const id = this.ids(record).device;
     return (this.gladys.devices ?? []).some((device) => device.external_id === id);
   }
 
   label(record) {
-    return deviceName(record, 'en');
+    return this.name(record, 'en');
   }
 
   // --- States ----------------------------------------------------------------
@@ -644,11 +784,15 @@ export class MideaHub {
     if (!record.capsQueried || !this.isCreated(record)) {
       return [];
     }
-    const ids = deviceIds(this.gladys, record.id);
-    const values = deviceValues(record);
+    const ids = this.ids(record);
+    const heatPump = isHeatPump(record);
+    const values = heatPump ? heatPumpValues(record) : deviceValues(record);
+    const specs = heatPump
+      ? heatPumpFeatureSpecs(record, this.config.language)
+      : featureSpecs(record, this.config.language);
     const states = [];
     const changed = [];
-    for (const spec of featureSpecs(record, this.config.language)) {
+    for (const spec of specs) {
       const value = values[spec.key];
       if (value === undefined || value === null) {
         continue;
@@ -695,7 +839,7 @@ export class MideaHub {
     const entries = records
       .filter((record) => this.isCreated(record))
       .map((record) => ({
-        external_id: deviceIds(this.gladys, record.id).device,
+        external_id: this.ids(record).device,
         transport: record.reachable === true ? 'local' : 'unreachable',
       }));
     for (let at = 0; at < entries.length; at += 100) {
@@ -781,39 +925,14 @@ export class MideaHub {
   async refresh(record, { rethrow = false } = {}) {
     const seq = record.commandSeq;
     record.lastPolledAt = Date.now();
-    let state;
-    let energy = record.energy;
-    let humidity = record.humidity;
+    let reading;
     try {
-      state = decodeResponse(await record.lan.request(getStateCommand(), isState)).state;
-      const options = { energyFormat: this.config.energyFormat };
-      if (record.caps.energy) {
-        energy = decodeResponse(
-          await record.lan.request(getGroupDataCommand(4), isGroup(4)),
-          options,
-        );
-      }
-      if (record.caps.humidity) {
-        humidity = decodeResponse(
-          await record.lan.request(getGroupDataCommand(5), isGroup(5)),
-        ).humidity;
-      }
+      reading = isHeatPump(record) ? await this.readHeatPump(record) : await this.readAc(record);
     } catch (err) {
       if (rethrow) {
         throw err;
       }
-      if (err.unreachable) {
-        await this.failed(record);
-      } else if (err.auth) {
-        // The keys stopped working: the next discovery fetches new ones.
-        record.credentials = null;
-        this.problems.fail(`read:${record.id}`, `${this.label(record)} refuses its keys`);
-      } else {
-        this.problems.fail(
-          `read:${record.id}`,
-          `Cannot read ${this.label(record)}: ${err.message}`,
-        );
-      }
+      await this.readFailed(record, err);
       return;
     }
     this.problems.recover(`read:${record.id}`, `${this.label(record)} reads again`);
@@ -821,9 +940,82 @@ export class MideaHub {
       // A Gladys command ran meanwhile: this reading may predate it.
       return;
     }
-    record.energy = energy ? { totalEnergy: energy.totalEnergy, power: energy.power } : null;
-    record.humidity = humidity;
-    await this.applyReading(record, state);
+    Object.assign(record, reading.extra);
+    await this.applyReading(record, reading.state);
+  }
+
+  async readAc(record) {
+    let energy = record.energy;
+    let humidity = record.humidity;
+    const state = decodeResponse(await record.lan.request(getStateCommand(), isState)).state;
+    const options = { energyFormat: this.config.energyFormat };
+    if (record.caps.energy) {
+      energy = decodeResponse(
+        await record.lan.request(getGroupDataCommand(4), isGroup(4)),
+        options,
+      );
+    }
+    if (record.caps.humidity) {
+      humidity = decodeResponse(
+        await record.lan.request(getGroupDataCommand(5), isGroup(5)),
+      ).humidity;
+    }
+    return {
+      state,
+      extra: {
+        energy: energy ? { totalEnergy: energy.totalEnergy, power: energy.power } : null,
+        humidity,
+      },
+    };
+  }
+
+  async readHeatPump(record) {
+    const state = decodeC3Response(await this.probe(record)).state;
+    const unit = record.caps?.unit ? await this.queryHeatPumpUnit(record) : null;
+    return { state, extra: { unit: unit ?? record.unit } };
+  }
+
+  /** A read that failed: counted when the unit does not answer, said once otherwise. */
+  async readFailed(record, err) {
+    if (err.unreachable) {
+      await this.failed(record);
+    } else if (err.auth) {
+      // The keys stopped working: the next discovery fetches new ones.
+      record.credentials = null;
+      this.problems.fail(`read:${record.id}`, `${this.label(record)} refuses its keys`);
+    } else {
+      this.problems.fail(`read:${record.id}`, `Cannot read ${this.label(record)}: ${err.message}`);
+    }
+  }
+
+  /**
+   * What a heat pump pushes between the reads: its state after a change made
+   * on its controller, its sensors, its energy counters.
+   */
+  async heatPumpPush(record, frame) {
+    let decoded;
+    try {
+      decoded = decodeC3Response(frame);
+    } catch (err) {
+      logger.debug(`${this.label(record)}: ${err.message}`);
+      return;
+    }
+    if (decoded.kind === 'energy') {
+      record.energy = { totalEnergy: decoded.energy.totalEnergy };
+      if (!record.hasEnergy) {
+        record.hasEnergy = true;
+        await this.save();
+        await this.publishDevices();
+      }
+      await this.publishStates(record);
+    } else if (decoded.kind === 'unit' && record.caps?.unit) {
+      record.unit = { ...record.unit, ...decoded.unit };
+      await this.publishStates(record);
+    } else if (decoded.kind === 'basic' && record.capsQueried) {
+      await this.applyReading(record, decoded.state);
+    } else {
+      logger.debug(`${this.label(record)}: unsolicited ${frame.toString('hex')}`);
+    }
   }
 
   /**
@@ -833,8 +1025,9 @@ export class MideaHub {
   async applyReading(record, state) {
     record.state = state;
     record.failures = 0;
+    const heatPump = isHeatPump(record);
     let structureChanged = false;
-    if (state.outdoorTemperature !== null && !record.hasOutdoor) {
+    if (!heatPump && state.outdoorTemperature !== null && !record.hasOutdoor) {
       record.hasOutdoor = true;
       structureChanged = true;
     }
@@ -846,7 +1039,7 @@ export class MideaHub {
       this.requestWidgetRefresh();
     }
     let persist = structureChanged;
-    if (record.filterAlert !== state.filterAlert) {
+    if (!heatPump && record.filterAlert !== state.filterAlert) {
       if (record.filterAlert === false && state.filterAlert) {
         this.fire(record, TRIGGERS.FILTER, {});
       }
@@ -903,7 +1096,7 @@ export class MideaHub {
     }
     this.track(
       this.gladys.publishSceneEvent(key, {
-        device: deviceIds(this.gladys, record.id).device,
+        device: this.ids(record).device,
         ...data,
       }),
     );
@@ -949,6 +1142,54 @@ export class MideaHub {
     await this.applyReading(record, state ?? { ...record.state, ...settings });
   }
 
+  /**
+   * A heat pump command (heatPumpCommand): the basic settings at once, or
+   * eco or silent mode. midea-local does not wait for an answer to these:
+   * an answer carrying the state is taken, its absence means the settings
+   * took, and the next read says otherwise if they did not.
+   */
+  async sendHeatPump(record, command) {
+    record.commandSeq += 1;
+    const protocol = { protocol: record.protocol ?? 0 };
+    let frame;
+    let bodyType;
+    let assumed;
+    if (command.basic) {
+      frame = setBasicCommand(command.basic, protocol);
+      bodyType = BODY_TYPE.BASIC;
+      assumed = command.basic;
+    } else if (command.eco !== undefined) {
+      frame = setEcoCommand(command.eco, protocol);
+      bodyType = BODY_TYPE.ECO;
+      assumed = { ...record.state, eco: command.eco };
+    } else {
+      frame = setSilentCommand(command.silentLevel, protocol);
+      bodyType = BODY_TYPE.SILENCE;
+      assumed = { ...record.state, silent: command.silentLevel !== SILENT_LEVEL.OFF };
+    }
+    let answer;
+    try {
+      answer = await record.lan.request(frame, answersBody(bodyType), {
+        optional: true,
+        retries: 1,
+      });
+    } catch (err) {
+      if (err.unreachable) {
+        await this.failed(record, { now: true });
+        throw new Error(`${this.label(record)} does not answer at ${record.host}`, { cause: err });
+      }
+      throw err;
+    }
+    let state = null;
+    try {
+      const decoded = answer ? decodeC3Response(answer) : null;
+      state = decoded?.kind === 'basic' ? decoded.state : null;
+    } catch {
+      // An acknowledgement without state: assume the settings took.
+    }
+    await this.applyReading(record, state ?? assumed);
+  }
+
   /** A Gladys command on a feature of one of the units. */
   async setValue(device, feature, value) {
     const record = this.require(device?.external_id);
@@ -958,6 +1199,10 @@ export class MideaHub {
       : null;
     logger.info(`Command: ${this.label(record)} ${key} = ${value}`);
     await this.currentState(record);
+    if (isHeatPump(record)) {
+      await this.sendHeatPump(record, heatPumpCommand(record, key, value));
+      return;
+    }
     await this.send(record, applyCommand(record, key, value));
   }
 
@@ -967,6 +1212,9 @@ export class MideaHub {
    */
   async applySettings(deviceExternalId, settings) {
     const record = this.require(deviceExternalId);
+    if (isHeatPump(record)) {
+      throw new Error(`${this.label(record)} is a heat pump, not an air conditioner`);
+    }
     await this.currentState(record);
     let next = { ...record.state };
     const steps = [
@@ -992,7 +1240,7 @@ export class MideaHub {
       unsupported: [...this.unsupported.values()],
       devices: [...this.records.values()].map((record) => ({
         names: Object.fromEntries(
-          LANGUAGES.map((language) => [language, deviceName(record, language)]),
+          LANGUAGES.map((language) => [language, this.name(record, language)]),
         ),
         host: record.host,
         version: record.version,

@@ -351,7 +351,7 @@ test('the search action reports every unit', async (t) => {
   t.after(() => world.app.stop());
   const ack = await world.fake.action('search', {});
   assert.equal(ack.success, true);
-  assert.match(ack.data.message.fr, /2 climatiseur\(s\), 2 répondent/);
+  assert.match(ack.data.message.fr, /2 appareil\(s\) Midea, 2 répondent/);
   assert.match(ack.data.message.fr, /192\.0\.2\.11, V3\): répond/);
   assert.match(ack.data.message.en, /Ignored addresses: nope/);
 });
