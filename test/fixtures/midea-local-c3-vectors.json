@@ -99,7 +99,8 @@
         "dhw_temp_max": 50.0,
         "dhw_temp_min": 34.0,
         "tank_actual_temperature": 44.0,
-        "error_code": 0
+        "error_code": 0,
+        "error_code_description": "No error"
       }
     },
     {
@@ -135,7 +136,8 @@
         "dhw_temp_max": 60.0,
         "dhw_temp_min": 20.0,
         "tank_actual_temperature": 25.0,
-        "error_code": 0
+        "error_code": 0,
+        "error_code_description": "No error"
       }
     },
     {
@@ -171,7 +173,8 @@
         "dhw_temp_max": 60.0,
         "dhw_temp_min": 20.0,
         "tank_actual_temperature": 25.0,
-        "error_code": 0
+        "error_code": 0,
+        "error_code_description": "No error"
       }
     },
     {
@@ -207,7 +210,8 @@
         "dhw_temp_max": 60.0,
         "dhw_temp_min": 20.0,
         "tank_actual_temperature": 25.0,
-        "error_code": 0
+        "error_code": 0,
+        "error_code_description": "No error"
       }
     },
     {
@@ -243,7 +247,8 @@
         "dhw_temp_max": 60.0,
         "dhw_temp_min": 20.0,
         "tank_actual_temperature": 25.0,
-        "error_code": 0
+        "error_code": 0,
+        "error_code_description": "No error"
       }
     },
     {
@@ -279,11 +284,160 @@
         "dhw_temp_max": 60.0,
         "dhw_temp_min": 20.0,
         "tank_actual_temperature": 25.0,
-        "error_code": 9
+        "error_code": 9,
+        "error_code_description": "E8: Water flow failure"
       }
     },
     {
-      "frame": "aa19c30000000000020404050000123400003039fd28322d37ab",
+      "frame": "aa23c3000000000002030101150003033219322c3c191912371919123c223c1419142059",
+      "message_type": 3,
+      "body_type": 1,
+      "attrs": {
+        "zone1_power": true,
+        "zone2_power": false,
+        "dhw_power": false,
+        "zone1_curve": false,
+        "zone2_curve": false,
+        "tbh": false,
+        "fast_dhw": false,
+        "heat": true,
+        "cool": false,
+        "dhw": true,
+        "double_zone": false,
+        "zone_temp_type": [true, false],
+        "silent_mode": false,
+        "eco_mode": false,
+        "mode": 3,
+        "mode_auto": 3,
+        "zone_target_temp": [50.0, 25.0],
+        "dhw_target_temp": 50.0,
+        "room_target_temp": 22.0,
+        "zone_heating_temp_max": [60.0, 55.0],
+        "zone_heating_temp_min": [25.0, 25.0],
+        "zone_cooling_temp_max": [25.0, 25.0],
+        "zone_cooling_temp_min": [18.0, 18.0],
+        "room_temp_max": 30.0,
+        "room_temp_min": 17.0,
+        "dhw_temp_max": 60.0,
+        "dhw_temp_min": 20.0,
+        "tank_actual_temperature": 25.0,
+        "error_code": 20,
+        "error_code_description": "P0: Low pressure switch protection"
+      }
+    },
+    {
+      "frame": "aa23c3000000000002030101150003033219322c3c191912371919123c223c14192d2040",
+      "message_type": 3,
+      "body_type": 1,
+      "attrs": {
+        "zone1_power": true,
+        "zone2_power": false,
+        "dhw_power": false,
+        "zone1_curve": false,
+        "zone2_curve": false,
+        "tbh": false,
+        "fast_dhw": false,
+        "heat": true,
+        "cool": false,
+        "dhw": true,
+        "double_zone": false,
+        "zone_temp_type": [true, false],
+        "silent_mode": false,
+        "eco_mode": false,
+        "mode": 3,
+        "mode_auto": 3,
+        "zone_target_temp": [50.0, 25.0],
+        "dhw_target_temp": 50.0,
+        "room_target_temp": 22.0,
+        "zone_heating_temp_max": [60.0, 55.0],
+        "zone_heating_temp_min": [25.0, 25.0],
+        "zone_cooling_temp_max": [25.0, 25.0],
+        "zone_cooling_temp_min": [18.0, 18.0],
+        "room_temp_max": 30.0,
+        "room_temp_min": 17.0,
+        "dhw_temp_max": 60.0,
+        "dhw_temp_min": 20.0,
+        "tank_actual_temperature": 25.0,
+        "error_code": 45,
+        "error_code_description": "H6: DC fan motor fault"
+      }
+    },
+    {
+      "frame": "aa23c3000000000002030101150003033219322c3c191912371919123c223c14198f20de",
+      "message_type": 3,
+      "body_type": 1,
+      "attrs": {
+        "zone1_power": true,
+        "zone2_power": false,
+        "dhw_power": false,
+        "zone1_curve": false,
+        "zone2_curve": false,
+        "tbh": false,
+        "fast_dhw": false,
+        "heat": true,
+        "cool": false,
+        "dhw": true,
+        "double_zone": false,
+        "zone_temp_type": [true, false],
+        "silent_mode": false,
+        "eco_mode": false,
+        "mode": 3,
+        "mode_auto": 3,
+        "zone_target_temp": [50.0, 25.0],
+        "dhw_target_temp": 50.0,
+        "room_target_temp": 22.0,
+        "zone_heating_temp_max": [60.0, 55.0],
+        "zone_heating_temp_min": [25.0, 25.0],
+        "zone_cooling_temp_max": [25.0, 25.0],
+        "zone_cooling_temp_min": [18.0, 18.0],
+        "room_temp_max": 30.0,
+        "room_temp_min": 17.0,
+        "dhw_temp_max": 60.0,
+        "dhw_temp_min": 20.0,
+        "tank_actual_temperature": 25.0,
+        "error_code": 143,
+        "error_code_description": "L9: Speed difference > 15Hz between real and setting speed"
+      }
+    },
+    {
+      "frame": "aa23c3000000000002030101150003033219322c3c191912371919123c223c141963200a",
+      "message_type": 3,
+      "body_type": 1,
+      "attrs": {
+        "zone1_power": true,
+        "zone2_power": false,
+        "dhw_power": false,
+        "zone1_curve": false,
+        "zone2_curve": false,
+        "tbh": false,
+        "fast_dhw": false,
+        "heat": true,
+        "cool": false,
+        "dhw": true,
+        "double_zone": false,
+        "zone_temp_type": [true, false],
+        "silent_mode": false,
+        "eco_mode": false,
+        "mode": 3,
+        "mode_auto": 3,
+        "zone_target_temp": [50.0, 25.0],
+        "dhw_target_temp": 50.0,
+        "room_target_temp": 22.0,
+        "zone_heating_temp_max": [60.0, 55.0],
+        "zone_heating_temp_min": [25.0, 25.0],
+        "zone_cooling_temp_max": [25.0, 25.0],
+        "zone_cooling_temp_min": [18.0, 18.0],
+        "room_temp_max": 30.0,
+        "room_temp_min": 17.0,
+        "dhw_temp_max": 60.0,
+        "dhw_temp_min": 20.0,
+        "tank_actual_temperature": 25.0,
+        "error_code": 99,
+        "error_code_description": "Unknown code (raw=99)"
+      }
+    },
+    {
+      "frame": "aa19c30000000000020404150000123400003039fd28322d379b",
       "message_type": 4,
       "body_type": 4,
       "attrs": {
@@ -292,11 +446,13 @@
         "status_dhw": true,
         "total_energy_consumption": 4660,
         "total_produced_energy": 12345,
-        "outdoor_temperature": -3.0
+        "outdoor_temperature": -3.0,
+        "status_ibh": true,
+        "status_tbh": false
       }
     },
     {
-      "frame": "aac9c30000000000020310390c8c7d72473405d81e232f6f770d65d670e58e0351d8ae8e4f6eac342f3031b7b08716eb3fc12896b96223177494287733c28ee8ba53bdb56b8824577d53ecc28a70a61c7510a1cd89216ca16cffcaea4904b07e86dbccb97046fc2e18384e51d820c5c3ef80053a88ae3996de50e801865b3698654ebf5200a5fa0939b99d7a1d7b282bf8234041f35487d86c669fccbfe0e73d7e7320ad0a757003241e752210a924798ef86d43f27cf2d0613031dcb5d8d2ef1b321fcead377f6261d1",
+      "frame": "aac9c30000000000020310390c8c7d72473405d81e232f6f770d65d670e58e0351d8ae8e4f6eac342f308005b08716eb3fc12896b96223177494287733c28ee8ba53bdb56b8824577d53ecc28a70a61c7510a1cd89216ca16cffcaea4904b07e86dbccb97046fc2e18384e51d820c5c3ef80053a88ae3996de50e801865b3698654ebf5200a5fa0939b99d7a1d7b282bf8234041f35487d86c669fccbfe0e73d7e7320ad0a757003241e752210a924798ef86d43f27cf2d0613031dcb5d8d2ef1b321fcead377f626134",
       "message_type": 3,
       "body_type": 16,
       "attrs": {
@@ -307,11 +463,19 @@
         "instant_power0": 1200,
         "heat_run": true,
         "cool_run": false,
-        "dhw_run": true
+        "dhw_run": true,
+        "water_flower": 21437,
+        "water_pressure": 32083,
+        "defrost_valve_on": true,
+        "ibh1_on": true,
+        "ibh2_on": false,
+        "load_output_tbh": true,
+        "total_electricity0": 1889934453,
+        "total_thermal0": 279039369
       }
     },
     {
-      "frame": "aac9c30000000000020310390c8c7d724734fbd81e232f6f770d65d670e58e0351d8ae8e4f6eac342f3031b7b08716eb3fc12896b96223177494287733c28ee8ba53bdb56b8824577d53ecc28a70a61c7510a1cd89216ca16cffcaea4904b07e86dbccb97046fc2e18384e51d820c5c3ef80053a88ae3996de50e801865b3698654ebf5200a5fa0939b99d7a1d7b282bf8234041f35487d86c669fccbfe0e73d7e7320ad0a757003241e752210a924798ef86d43f27cf2d0613031dcb5d8d2ef1b321fcead377f6261db",
+      "frame": "aac9c30000000000020310390c8c7d724734fbd81e232f6f770d65d670e58e0351d8ae8e4f6eac342f308005b08716eb3fc12896b96223177494287733c28ee8ba53bdb56b8824577d53ecc28a70a61c7510a1cd89216ca16cffcaea4904b07e86dbccb97046fc2e18384e51d820c5c3ef80053a88ae3996de50e801865b3698654ebf5200a5fa0939b99d7a1d7b282bf8234041f35487d86c669fccbfe0e73d7e7320ad0a757003241e752210a924798ef86d43f27cf2d0613031dcb5d8d2ef1b321fcead377f62613e",
       "message_type": 3,
       "body_type": 16,
       "attrs": {
@@ -322,7 +486,15 @@
         "instant_power0": 1200,
         "heat_run": true,
         "cool_run": false,
-        "dhw_run": true
+        "dhw_run": true,
+        "water_flower": 21437,
+        "water_pressure": 32083,
+        "defrost_valve_on": true,
+        "ibh1_on": true,
+        "ibh2_on": false,
+        "load_output_tbh": true,
+        "total_electricity0": 1889934453,
+        "total_thermal0": 279039369
       }
     },
     {
@@ -334,7 +506,12 @@
         "temp_t4": 3,
         "temp_tw_in": 28,
         "temp_tw_out": 33,
-        "instant_power0": 800
+        "instant_power0": 800,
+        "water_flower": 34792,
+        "water_pressure": 63823,
+        "comp_total_run_time": 41082,
+        "total_electricity0": 2540641567,
+        "total_thermal0": 2686261748
       }
     },
     {

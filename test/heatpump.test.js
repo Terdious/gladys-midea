@@ -13,13 +13,14 @@ import {
   MESSAGE_TYPE,
   SILENT_LEVEL,
   decodeC3Response,
+  errorDisplay,
   getApplianceCommand,
   getQueryCommand,
   setBasicCommand,
   setEcoCommand,
   setSilentCommand,
 } from '../src/midea/c3.js';
-import { HP_KEYS, THERMOSTAT_MODE, heatPumpIds } from '../src/heatpump.js';
+import { HP_KEYS, OPERATING_STATE, THERMOSTAT_MODE, heatPumpIds } from '../src/heatpump.js';
 import { TRIGGERS } from '../src/hub.js';
 import {
   FakeHeatPump,
@@ -27,6 +28,7 @@ import {
   c3Frame,
   createFakeCloud,
   energyBody,
+  unitNotificationBody,
 } from './helpers/fakeMidea.js';
 import { FakeMidea, createAll, createWorld } from './helpers/world.js';
 
@@ -117,9 +119,20 @@ test('C3 answers decode as midea-local decodes them', () => {
           tank_actual_temperature: s.tankTemperature,
           error_code: s.errorCode,
         },
-        attrs,
+        Object.fromEntries(
+          Object.entries(attrs).filter(([key]) => key !== 'error_code_description'),
+        ),
         where,
       );
+      // The code the controller shows: midea-local's "E8: Water flow failure".
+      const display = errorDisplay(s.errorCode);
+      if (display === null) {
+        assert.equal(attrs.error_code_description, 'No error', where);
+      } else if (display.startsWith('#')) {
+        assert.equal(attrs.error_code_description, `Unknown code (raw=${s.errorCode})`, where);
+      } else {
+        assert.ok(attrs.error_code_description.startsWith(`${display}: `), where);
+      }
     } else if (decoded.kind === 'energy') {
       const e = decoded.energy;
       assert.deepEqual(
@@ -127,11 +140,17 @@ test('C3 answers decode as midea-local decodes them', () => {
           status_heating: e.heating,
           status_cool: e.cooling,
           status_dhw: e.heatingWater,
+          backup_heater: e.backupHeater,
           total_energy_consumption: e.totalEnergy,
           total_produced_energy: e.producedEnergy,
           outdoor_temperature: e.outdoorTemperature,
         },
-        attrs,
+        {
+          ...Object.fromEntries(
+            Object.entries(attrs).filter(([key]) => !['status_ibh', 'status_tbh'].includes(key)),
+          ),
+          backup_heater: attrs.status_ibh || attrs.status_tbh,
+        },
         where,
       );
     } else if (decoded.kind === 'unit') {
@@ -143,15 +162,37 @@ test('C3 answers decode as midea-local decodes them', () => {
       assert.equal(u.waterInletTemperature, attrs.temp_tw_in, where);
       assert.equal(u.waterOutletTemperature, attrs.temp_tw_out, where);
       assert.equal(u.power, attrs.instant_power0, where);
+      // midea-local keeps the raw flow; midea_ac_lan shows it as hundredths of m³/h.
+      assert.equal(u.waterFlow, attrs.water_flower / 100, where);
+      assert.equal(u.waterPressure, attrs.water_pressure, where);
       if ('heat_run' in attrs) {
         assert.equal(u.heating, attrs.heat_run, where);
         assert.equal(u.cooling, attrs.cool_run, where);
         assert.equal(u.heatingWater, attrs.dhw_run, where);
+        assert.equal(u.defrost, attrs.defrost_valve_on, where);
+        assert.equal(
+          u.backupHeater,
+          attrs.ibh1_on || attrs.ibh2_on || attrs.load_output_tbh,
+          where,
+        );
+        assert.equal(u.totalElectricity, attrs.total_electricity0, where);
+        assert.equal(u.totalThermal, attrs.total_thermal0, where);
+      } else {
+        assert.equal(u.compressorRunTime, attrs.comp_total_run_time, where);
       }
     } else if (decoded.kind === 'eco') {
       assert.equal(decoded.eco, attrs.eco_function_state, where);
     } else if (decoded.kind === 'silence') {
-      assert.equal(decoded.silent, attrs.silent_level !== 'off', where);
+      assert.equal(decoded.silent, attrs.silent_mode, where);
+      assert.equal(
+        decoded.silentLevel,
+        {
+          off: SILENT_LEVEL.OFF,
+          silent: SILENT_LEVEL.SILENT,
+          super_silent: SILENT_LEVEL.SUPER_SILENT,
+        }[attrs.silent_level],
+        where,
+      );
     } else {
       assert.fail(`${where}: not decoded`);
     }
@@ -211,14 +252,24 @@ test('discovery: a heat pump becomes a device of its own, beside the air conditi
   assert.deepEqual(keysOf(device), [
     HP_KEYS.ZONE1_MODE,
     HP_KEYS.ZONE1_TARGET,
+    HP_KEYS.ZONE1_STATE,
+    HP_KEYS.ZONE1_CURVE,
     HP_KEYS.DHW_POWER,
     HP_KEYS.DHW_TARGET,
     HP_KEYS.TANK_TEMPERATURE,
+    HP_KEYS.DHW_HEATING,
     HP_KEYS.OUTDOOR_TEMPERATURE,
     HP_KEYS.WATER_INLET,
     HP_KEYS.WATER_OUTLET,
+    HP_KEYS.WATER_FLOW,
+    HP_KEYS.WATER_PRESSURE,
     HP_KEYS.ECO,
     HP_KEYS.SILENT,
+    HP_KEYS.SUPER_SILENT,
+    HP_KEYS.COMPRESSOR,
+    HP_KEYS.DEFROST,
+    HP_KEYS.BACKUP_HEATER,
+    HP_KEYS.ERROR,
     HP_KEYS.POWER_DRAW,
   ]);
   const [mode, target] = device.features;
@@ -281,6 +332,68 @@ test('states: zones, hot water and sensors are published once the device is adde
   await world.hub.pollAll({ force: true });
   assert.equal(lastState(world, pump, HP_KEYS.OUTDOOR_TEMPERATURE), -4);
   assert.equal(lastState(world, pump, HP_KEYS.ZONE1_MODE), THERMOSTAT_MODE.OFF);
+});
+
+test('states: what runs (zone, hot water, compressor, defrost, backup heater), flow, pressure, error', async (t) => {
+  const pump = new FakeHeatPump({ host: '192.0.2.40' });
+  const world = await createdWorld(t, { units: [pump] });
+  await world.hub.pollAll({ force: true });
+  assert.equal(lastState(world, pump, HP_KEYS.ZONE1_STATE), OPERATING_STATE.HEATING);
+  assert.equal(lastState(world, pump, HP_KEYS.DHW_HEATING), 0);
+  assert.equal(lastState(world, pump, HP_KEYS.COMPRESSOR), 1);
+  assert.equal(lastState(world, pump, HP_KEYS.DEFROST), 0);
+  assert.equal(lastState(world, pump, HP_KEYS.BACKUP_HEATER), 0);
+  assert.equal(lastState(world, pump, HP_KEYS.WATER_FLOW), 1.52);
+  assert.equal(lastState(world, pump, HP_KEYS.WATER_PRESSURE), 180);
+  assert.equal(lastState(world, pump, HP_KEYS.ZONE1_CURVE), 0);
+  assert.equal(lastState(world, pump, HP_KEYS.ERROR), 'No error');
+
+  // Hot water now, the compressor defrosting with the backup heater on.
+  Object.assign(pump.sensors, { run: 0x20, defrost: true, backup: true, compressor: 0 });
+  await world.hub.pollAll({ force: true });
+  assert.equal(lastState(world, pump, HP_KEYS.ZONE1_STATE), OPERATING_STATE.IDLE);
+  assert.equal(lastState(world, pump, HP_KEYS.DHW_HEATING), 1);
+  assert.equal(lastState(world, pump, HP_KEYS.COMPRESSOR), 0);
+  assert.equal(lastState(world, pump, HP_KEYS.DEFROST), 1);
+  assert.equal(lastState(world, pump, HP_KEYS.BACKUP_HEATER), 1);
+
+  // A zone switched off is idle, whatever the unit does.
+  pump.sensors.run = 0x10;
+  pump.state.zone1Power = false;
+  await world.hub.pollAll({ force: true });
+  assert.equal(lastState(world, pump, HP_KEYS.ZONE1_STATE), OPERATING_STATE.IDLE);
+});
+
+test('commands: the weather curve of a zone rides on the basic set frame', async (t) => {
+  const pump = new FakeHeatPump({ host: '192.0.2.40', state: { doubleZone: true } });
+  const world = await createdWorld(t, { units: [pump] });
+  await setValue(world, pump, HP_KEYS.ZONE2_CURVE, 1);
+  assert.equal(pump.state.zone2Curve, true);
+  assert.equal(pump.state.zone1Curve, false);
+  assert.equal(lastState(world, pump, HP_KEYS.ZONE2_CURVE), 1);
+});
+
+test('commands: silent and super silent modes are one level', async (t) => {
+  const pump = new FakeHeatPump({ host: '192.0.2.40' });
+  const world = await createdWorld(t, { units: [pump] });
+  await setValue(world, pump, HP_KEYS.SUPER_SILENT, 1);
+  assert.equal(pump.state.silentLevel, SILENT_LEVEL.SUPER_SILENT);
+  assert.equal(lastState(world, pump, HP_KEYS.SUPER_SILENT), 1);
+  assert.equal(lastState(world, pump, HP_KEYS.SILENT), 1);
+  // Silent mode switched on again keeps the super silent level.
+  await setValue(world, pump, HP_KEYS.SILENT, 1);
+  assert.equal(pump.state.silentLevel, SILENT_LEVEL.SUPER_SILENT);
+  await setValue(world, pump, HP_KEYS.SUPER_SILENT, 0);
+  assert.equal(pump.state.silentLevel, SILENT_LEVEL.SILENT);
+  await setValue(world, pump, HP_KEYS.SILENT, 0);
+  assert.equal(pump.state.silentLevel, SILENT_LEVEL.OFF);
+  assert.equal(lastState(world, pump, HP_KEYS.SUPER_SILENT), 0);
+
+  // A level changed on the controller is read back.
+  pump.state.silent = true;
+  pump.state.silentLevel = SILENT_LEVEL.SUPER_SILENT;
+  await world.hub.pollAll({ force: true });
+  assert.equal(lastState(world, pump, HP_KEYS.SUPER_SILENT), 1);
 });
 
 test('commands: one set frame carrying every setting, the rest kept', async (t) => {
@@ -351,11 +464,14 @@ test('a unit answering only the basic state: no sensors, protocol 0', async (t) 
     host: '192.0.2.40',
     unitAnswers: false,
     applianceAnswers: false,
+    silenceAnswers: false,
   });
   const world = await createdWorld(t, { units: [pump] });
   const device = deviceOf(world, pump);
   assert.ok(!keysOf(device).includes(HP_KEYS.OUTDOOR_TEMPERATURE));
   assert.ok(!keysOf(device).includes(HP_KEYS.POWER_DRAW));
+  assert.ok(!keysOf(device).includes(HP_KEYS.ZONE1_STATE));
+  assert.ok(!keysOf(device).includes(HP_KEYS.SUPER_SILENT));
   assert.equal(world.hub.records.get(pump.id).protocol, 0);
   // The parameters are not asked again at every read.
   const before = pump.frames.length;
@@ -375,14 +491,33 @@ test('notifications: a change on the controller and the energy counter are taken
   await world.hub.idle();
   assert.equal(lastState(world, pump, HP_KEYS.DHW_POWER), 1);
 
-  pump.push(c3Frame(MESSAGE_TYPE.NOTIFY1, energyBody(4321)));
+  pump.push(c3Frame(MESSAGE_TYPE.NOTIFY1, energyBody(4321, 15876)));
   await new Promise((resolve) => setTimeout(resolve, 20));
   await world.hub.idle();
-  const device = world.fake.discoveredDevices.at(-1);
-  assert.ok(keysOf(device).includes(HP_KEYS.ENERGY_INDEX), 'the energy feature appears');
+  let device = world.fake.discoveredDevices.at(-1);
+  assert.ok(keysOf(device).includes(HP_KEYS.ENERGY_INDEX), 'the energy features appear');
+  assert.ok(keysOf(device).includes(HP_KEYS.HEAT_PRODUCED));
+  assert.ok(!keysOf(device).includes(HP_KEYS.COMPRESSOR_RUN_TIME));
+
+  pump.push(
+    c3Frame(
+      MESSAGE_TYPE.NOTIFY1,
+      unitNotificationBody({ outdoor: 3, waterIn: 31, waterOut: 36, watts: 900, runTime: 2964 }),
+    ),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await world.hub.idle();
+  device = world.fake.discoveredDevices.at(-1);
+  assert.ok(keysOf(device).includes(HP_KEYS.COMPRESSOR_RUN_TIME), 'the run time appears');
   await world.fake.deviceCreated(device);
   await world.hub.idle();
   assert.equal(lastState(world, pump, HP_KEYS.ENERGY_INDEX), 4321);
+  assert.equal(lastState(world, pump, HP_KEYS.HEAT_PRODUCED), 15876);
+  assert.equal(lastState(world, pump, HP_KEYS.COMPRESSOR_RUN_TIME), 2964);
+
+  // The next read keeps the run time, which only the notification carries.
+  await world.hub.pollAll({ force: true });
+  assert.equal(world.hub.records.get(pump.id).unit.compressorRunTime, 2964);
 });
 
 test('V3: a token and key typed in the configuration open the unit without the cloud', async (t) => {
@@ -413,8 +548,9 @@ test('triggers: a new error code of the heat pump fires the unit error', async (
   await world.hub.idle();
   assert.deepEqual(
     world.fake.sceneEvents.map(({ key, data }) => [key, data]),
-    [[TRIGGERS.ERROR, { device: ids(world, pump).device, error_code: 9 }]],
+    [[TRIGGERS.ERROR, { device: ids(world, pump).device, error_code: 9, error_display: 'E8' }]],
   );
+  assert.equal(world.fake.lastState(ids(world, pump).feature(HP_KEYS.ERROR)), 'E8');
 });
 
 test('the air conditioner widget and scene action say they are not for a heat pump', async (t) => {

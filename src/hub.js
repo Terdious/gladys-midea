@@ -37,6 +37,7 @@ import {
   SILENT_LEVEL,
   answersBody,
   decodeC3Response,
+  errorDisplay,
   getApplianceCommand,
   getQueryCommand,
   isApplianceAnswer,
@@ -299,6 +300,7 @@ export class MideaHub {
         capsQueried: saved.capsQueried === true,
         hasOutdoor: saved.hasOutdoor === true,
         hasEnergy: saved.hasEnergy === true,
+        hasRunTime: saved.hasRunTime === true,
         protocol: Number.isInteger(saved.protocol) ? saved.protocol : null,
         filterAlert: typeof saved.filterAlert === 'boolean' ? saved.filterAlert : null,
         errorCode: Number.isInteger(saved.errorCode) ? saved.errorCode : null,
@@ -331,6 +333,7 @@ export class MideaHub {
         capsQueried: record.capsQueried,
         hasOutdoor: record.hasOutdoor,
         hasEnergy: record.hasEnergy,
+        hasRunTime: record.hasRunTime,
         protocol: record.protocol,
         filterAlert: record.filterAlert,
         errorCode: record.errorCode,
@@ -364,6 +367,8 @@ export class MideaHub {
       // (null until asked).
       unit: null,
       hasEnergy: false,
+      hasRunTime: false,
+      silentLevel: null,
       protocol: null,
       hasOutdoor: false,
       filterAlert: null,
@@ -675,9 +680,14 @@ export class MideaHub {
   async queryHeatPump(record) {
     const basic = decodeC3Response(await this.probe(record)).state;
     const unit = await this.queryHeatPumpUnit(record);
+    const silentLevel = await this.queryHeatPumpSilence(record);
     record.state = basic;
     record.unit = unit;
-    record.rawCaps = summarizeHeatPump(basic, { unit: unit !== null });
+    record.silentLevel = silentLevel;
+    record.rawCaps = summarizeHeatPump(basic, {
+      unit: unit !== null,
+      silenceLevel: silentLevel !== null,
+    });
     record.caps = record.rawCaps;
     record.capsQueried = true;
   }
@@ -694,6 +704,21 @@ export class MideaHub {
     }
     try {
       return decodeC3Response(answer).unit;
+    } catch (err) {
+      logger.debug(`${this.label(record)}: ${err.message}`);
+      return null;
+    }
+  }
+
+  /** The silent level (off, silent, super silent), or null without answer. */
+  async queryHeatPumpSilence(record) {
+    const answer = await record.lan.request(
+      getQueryCommand(BODY_TYPE.SILENCE, { protocol: record.protocol }),
+      answersBody(BODY_TYPE.SILENCE),
+      { optional: true, retries: 1 },
+    );
+    try {
+      return answer ? decodeC3Response(answer).silentLevel : null;
     } catch (err) {
       logger.debug(`${this.label(record)}: ${err.message}`);
       return null;
@@ -786,7 +811,7 @@ export class MideaHub {
     }
     const ids = this.ids(record);
     const heatPump = isHeatPump(record);
-    const values = heatPump ? heatPumpValues(record) : deviceValues(record);
+    const values = heatPump ? heatPumpValues(record, this.config.language) : deviceValues(record);
     const specs = heatPump
       ? heatPumpFeatureSpecs(record, this.config.language)
       : featureSpecs(record, this.config.language);
@@ -797,7 +822,11 @@ export class MideaHub {
       if (value === undefined || value === null) {
         continue;
       }
-      states.push({ device_feature_external_id: ids.feature(spec.key), state: value });
+      states.push(
+        spec.category === 'text'
+          ? { device_feature_external_id: ids.feature(spec.key), text: value }
+          : { device_feature_external_id: ids.feature(spec.key), state: value },
+      );
       if (record.published[spec.key] !== value) {
         changed.push(spec.key);
       }
@@ -972,7 +1001,15 @@ export class MideaHub {
   async readHeatPump(record) {
     const state = decodeC3Response(await this.probe(record)).state;
     const unit = record.caps?.unit ? await this.queryHeatPumpUnit(record) : null;
-    return { state, extra: { unit: unit ?? record.unit } };
+    const silentLevel = record.caps?.silenceLevel ? await this.queryHeatPumpSilence(record) : null;
+    return {
+      state,
+      extra: {
+        // The run time comes only with the notifications: kept across reads.
+        unit: unit ? { ...record.unit, ...unit } : record.unit,
+        silentLevel: silentLevel ?? record.silentLevel,
+      },
+    };
   }
 
   /** A read that failed: counted when the unit does not answer, said once otherwise. */
@@ -1001,7 +1038,7 @@ export class MideaHub {
       return;
     }
     if (decoded.kind === 'energy') {
-      record.energy = { totalEnergy: decoded.energy.totalEnergy };
+      record.energy = decoded.energy;
       if (!record.hasEnergy) {
         record.hasEnergy = true;
         await this.save();
@@ -1010,6 +1047,11 @@ export class MideaHub {
       await this.publishStates(record);
     } else if (decoded.kind === 'unit' && record.caps?.unit) {
       record.unit = { ...record.unit, ...decoded.unit };
+      if (!record.hasRunTime && decoded.unit.compressorRunTime !== undefined) {
+        record.hasRunTime = true;
+        await this.save();
+        await this.publishDevices();
+      }
       await this.publishStates(record);
     } else if (decoded.kind === 'basic' && record.capsQueried) {
       await this.applyReading(record, decoded.state);
@@ -1049,7 +1091,13 @@ export class MideaHub {
     if (record.errorCode !== state.errorCode) {
       if (record.errorCode !== null && state.errorCode !== 0) {
         logger.info(`${this.label(record)} reports error code ${state.errorCode}`);
-        this.fire(record, TRIGGERS.ERROR, { error_code: state.errorCode });
+        this.fire(record, TRIGGERS.ERROR, {
+          error_code: state.errorCode,
+          // What the unit's own screen shows (E8...), the number for an air conditioner.
+          error_display: isHeatPump(record)
+            ? errorDisplay(state.errorCode)
+            : String(state.errorCode),
+        });
       }
       record.errorCode = state.errorCode;
       persist = true;
@@ -1166,6 +1214,7 @@ export class MideaHub {
       frame = setSilentCommand(command.silentLevel, protocol);
       bodyType = BODY_TYPE.SILENCE;
       assumed = { ...record.state, silent: command.silentLevel !== SILENT_LEVEL.OFF };
+      record.silentLevel = command.silentLevel;
     }
     let answer;
     try {

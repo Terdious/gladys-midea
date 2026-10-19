@@ -351,10 +351,10 @@
         "es": "Error del equipo"
       },
       "description": {
-        "en": "The air conditioner reports a new error code.",
-        "fr": "Le climatiseur signale un nouveau code erreur.",
-        "de": "Die Klimaanlage meldet einen neuen Fehlercode.",
-        "es": "El aire acondicionado indica un nuevo código de error."
+        "en": "The air conditioner or heat pump reports a new error code.",
+        "fr": "Le climatiseur ou la pompe à chaleur signale un nouveau code erreur.",
+        "de": "Die Klimaanlage oder Wärmepumpe meldet einen neuen Fehlercode.",
+        "es": "El aire acondicionado o la bomba de calor indica un nuevo código de error."
       },
       "fields": [
         {
@@ -378,6 +378,16 @@
             "fr": "Code erreur",
             "de": "Fehlercode",
             "es": "Código de error"
+          }
+        },
+        {
+          "key": "error_display",
+          "type": "string",
+          "label": {
+            "en": "Code shown by the unit",
+            "fr": "Code affiché par l'appareil",
+            "de": "Vom Gerät angezeigter Code",
+            "es": "Código mostrado por el equipo"
           }
         }
       ]

@@ -14,31 +14,62 @@
 // -----------------------------------------------------------------------------
 
 import { DEVICE_POLL_FREQUENCIES } from '@gladysassistant/integration-sdk';
-import { C3_MODE, SILENT_LEVEL } from './midea/c3.js';
+import { C3_MODE, SILENT_LEVEL, errorDisplay } from './midea/c3.js';
 
 export const HEAT_PUMP_TYPE = 'heat-pump';
 
 export const HP_KEYS = {
   ZONE1_MODE: 'zone1-mode',
   ZONE1_TARGET: 'zone1-target-temperature',
+  ZONE1_STATE: 'zone1-operating-state',
+  ZONE1_CURVE: 'zone1-curve',
   ZONE2_MODE: 'zone2-mode',
   ZONE2_TARGET: 'zone2-target-temperature',
+  ZONE2_STATE: 'zone2-operating-state',
+  ZONE2_CURVE: 'zone2-curve',
   DHW_POWER: 'dhw-power',
   DHW_TARGET: 'dhw-target-temperature',
+  DHW_HEATING: 'dhw-heating',
   TANK_TEMPERATURE: 'tank-temperature',
   OUTDOOR_TEMPERATURE: 'outdoor-temperature',
   WATER_INLET: 'water-inlet-temperature',
   WATER_OUTLET: 'water-outlet-temperature',
+  WATER_FLOW: 'water-flow',
+  WATER_PRESSURE: 'water-pressure',
   ECO: 'eco',
   SILENT: 'silent',
+  SUPER_SILENT: 'super-silent',
+  COMPRESSOR: 'compressor',
+  COMPRESSOR_RUN_TIME: 'compressor-run-time',
+  DEFROST: 'defrost',
+  BACKUP_HEATER: 'backup-heater',
+  ERROR: 'error-code',
   POWER_DRAW: 'power-draw',
   ENERGY_INDEX: 'energy-index',
+  HEAT_PRODUCED: 'heat-produced',
 };
 
 const ZONES = [
-  { mode: HP_KEYS.ZONE1_MODE, target: HP_KEYS.ZONE1_TARGET, power: 'zone1Power' },
-  { mode: HP_KEYS.ZONE2_MODE, target: HP_KEYS.ZONE2_TARGET, power: 'zone2Power' },
+  {
+    mode: HP_KEYS.ZONE1_MODE,
+    target: HP_KEYS.ZONE1_TARGET,
+    state: HP_KEYS.ZONE1_STATE,
+    curve: HP_KEYS.ZONE1_CURVE,
+    power: 'zone1Power',
+    curveFlag: 'zone1Curve',
+  },
+  {
+    mode: HP_KEYS.ZONE2_MODE,
+    target: HP_KEYS.ZONE2_TARGET,
+    state: HP_KEYS.ZONE2_STATE,
+    curve: HP_KEYS.ZONE2_CURVE,
+    power: 'zone2Power',
+    curveFlag: 'zone2Curve',
+  },
 ];
+
+// Gladys' THERMOSTAT_OPERATING_STATE values.
+export const OPERATING_STATE = { IDLE: 0, HEATING: 1, COOLING: 2 };
 
 // Gladys' THERMOSTAT_MODE values (server/utils/constants.js).
 export const THERMOSTAT_MODE = { OFF: 0, HEATING: 1, COOLING: 2, AUTO: 3 };
@@ -58,6 +89,21 @@ const MODE_FROM_GLADYS = {
 export const HP_NAMES = {
   en: {
     device: 'Heat pump',
+    'zone1-operating-state': 'Zone 1 operation',
+    'zone1-curve': 'Zone 1 weather curve',
+    'zone2-operating-state': 'Zone 2 operation',
+    'zone2-curve': 'Zone 2 weather curve',
+    'dhw-heating': 'Hot water heating',
+    'water-flow': 'Water flow',
+    'water-pressure': 'Water pressure',
+    'super-silent': 'Super silent mode',
+    compressor: 'Compressor',
+    'compressor-run-time': 'Compressor run time',
+    defrost: 'Defrosting',
+    'backup-heater': 'Backup electric heater',
+    'error-code': 'Error code',
+    'heat-produced': 'Heat produced (kWh)',
+    'no-error': 'No error',
     'zone1-mode': 'Zone 1 mode',
     'zone1-target-temperature': 'Zone 1 setpoint',
     'zone2-mode': 'Zone 2 mode',
@@ -79,6 +125,21 @@ export const HP_NAMES = {
   },
   fr: {
     device: 'Pompe à chaleur',
+    'zone1-operating-state': 'Fonctionnement zone 1',
+    'zone1-curve': "Loi d'eau zone 1",
+    'zone2-operating-state': 'Fonctionnement zone 2',
+    'zone2-curve': "Loi d'eau zone 2",
+    'dhw-heating': "Chauffe de l'eau chaude",
+    'water-flow': "Débit d'eau",
+    'water-pressure': "Pression d'eau",
+    'super-silent': 'Mode super silencieux',
+    compressor: 'Compresseur',
+    'compressor-run-time': 'Heures du compresseur',
+    defrost: 'Dégivrage',
+    'backup-heater': 'Appoint électrique',
+    'error-code': 'Code erreur',
+    'heat-produced': 'Chaleur produite (kWh)',
+    'no-error': 'Aucune erreur',
     'zone1-mode': 'Mode zone 1',
     'zone1-target-temperature': 'Consigne zone 1',
     'zone2-mode': 'Mode zone 2',
@@ -100,6 +161,21 @@ export const HP_NAMES = {
   },
   de: {
     device: 'Wärmepumpe',
+    'zone1-operating-state': 'Betrieb Zone 1',
+    'zone1-curve': 'Heizkurve Zone 1',
+    'zone2-operating-state': 'Betrieb Zone 2',
+    'zone2-curve': 'Heizkurve Zone 2',
+    'dhw-heating': 'Warmwasserbereitung',
+    'water-flow': 'Wasserdurchfluss',
+    'water-pressure': 'Wasserdruck',
+    'super-silent': 'Extra leiser Modus',
+    compressor: 'Verdichter',
+    'compressor-run-time': 'Verdichter-Betriebsstunden',
+    defrost: 'Abtauen',
+    'backup-heater': 'Elektrischer Zuheizer',
+    'error-code': 'Fehlercode',
+    'heat-produced': 'Erzeugte Wärme (kWh)',
+    'no-error': 'Kein Fehler',
     'zone1-mode': 'Modus Zone 1',
     'zone1-target-temperature': 'Sollwert Zone 1',
     'zone2-mode': 'Modus Zone 2',
@@ -121,6 +197,21 @@ export const HP_NAMES = {
   },
   es: {
     device: 'Bomba de calor',
+    'zone1-operating-state': 'Funcionamiento zona 1',
+    'zone1-curve': 'Curva climática zona 1',
+    'zone2-operating-state': 'Funcionamiento zona 2',
+    'zone2-curve': 'Curva climática zona 2',
+    'dhw-heating': 'Calentamiento del agua',
+    'water-flow': 'Caudal de agua',
+    'water-pressure': 'Presión del agua',
+    'super-silent': 'Modo súper silencioso',
+    compressor: 'Compresor',
+    'compressor-run-time': 'Horas del compresor',
+    defrost: 'Desescarche',
+    'backup-heater': 'Apoyo eléctrico',
+    'error-code': 'Código de error',
+    'heat-produced': 'Calor producido (kWh)',
+    'no-error': 'Sin errores',
     'zone1-mode': 'Modo zona 1',
     'zone1-target-temperature': 'Consigna zona 1',
     'zone2-mode': 'Modo zona 2',
@@ -168,8 +259,9 @@ const union = (ranges) => {
  * @param {object|null} basic parseBasic()
  * @param {object} [extra]
  * @param {boolean} [extra.unit] the unit answers the parameters query
+ * @param {boolean} [extra.silenceLevel] the unit answers the silence query
  */
-export function summarizeHeatPump(basic, { unit = false } = {}) {
+export function summarizeHeatPump(basic, { unit = false, silenceLevel = false } = {}) {
   if (!basic) {
     return null;
   }
@@ -200,6 +292,7 @@ export function summarizeHeatPump(basic, { unit = false } = {}) {
     dhwMin: range(basic.dhwRange.min, basic.dhwRange.max)?.min ?? 20,
     dhwMax: range(basic.dhwRange.min, basic.dhwRange.max)?.max ?? 60,
     unit,
+    silenceLevel,
   };
 }
 
@@ -214,7 +307,7 @@ export function heatPumpModes(caps) {
 
 /**
  * The features of a heat pump: `{ key, category, type, ... }` without ids.
- * @param {object} record the hub record (caps, hasEnergy)
+ * @param {object} record the hub record (caps, hasEnergy, hasRunTime)
  * @param {string} language
  */
 export function heatPumpFeatureSpecs(record, language) {
@@ -247,6 +340,7 @@ export function heatPumpFeatureSpecs(record, language) {
     label: names[MODE_NAME[value]],
     sort_order: index,
   }));
+  const flag = (key) => sensor(key, 'input', 'binary', { min: 0, max: 1 });
   const specs = [];
   ZONES.slice(0, caps.doubleZone ? 2 : 1).forEach((zone, index) => {
     const limits = caps.zones[index];
@@ -259,6 +353,10 @@ export function heatPumpFeatureSpecs(record, language) {
         step: limits.step,
       }),
     );
+    if (caps.unit) {
+      specs.push(sensor(zone.state, 'thermostat', 'operating-state', { min: 0, max: 2 }));
+    }
+    specs.push(control(zone.curve, 'switch', 'binary'));
   });
   if (caps.dhw) {
     specs.push(
@@ -271,15 +369,47 @@ export function heatPumpFeatureSpecs(record, language) {
       }),
       temperatureSensor(HP_KEYS.TANK_TEMPERATURE),
     );
+    if (caps.unit) {
+      specs.push(sensor(HP_KEYS.DHW_HEATING, 'water-heater', 'heating', { min: 0, max: 1 }));
+    }
   }
   if (caps.unit) {
     specs.push(
       temperatureSensor(HP_KEYS.OUTDOOR_TEMPERATURE),
       temperatureSensor(HP_KEYS.WATER_INLET),
       temperatureSensor(HP_KEYS.WATER_OUTLET),
+      // The flow of the heating loop: Gladys has no other flow type than the
+      // water valve's.
+      sensor(HP_KEYS.WATER_FLOW, 'water-valve', 'flow', {
+        unit: 'cubic-meter-per-hour',
+        min: 0,
+        max: 100,
+      }),
+      sensor(HP_KEYS.WATER_PRESSURE, 'pressure-sensor', 'integer', {
+        unit: 'kPa',
+        min: 0,
+        max: 1000,
+      }),
     );
   }
   specs.push(control(HP_KEYS.ECO, 'switch', 'binary'), control(HP_KEYS.SILENT, 'switch', 'binary'));
+  if (caps.silenceLevel) {
+    specs.push(control(HP_KEYS.SUPER_SILENT, 'switch', 'binary'));
+  }
+  if (caps.unit) {
+    specs.push(flag(HP_KEYS.COMPRESSOR), flag(HP_KEYS.DEFROST), flag(HP_KEYS.BACKUP_HEATER));
+  }
+  if (record.hasRunTime) {
+    specs.push(
+      sensor(HP_KEYS.COMPRESSOR_RUN_TIME, 'duration', 'integer', {
+        unit: 'hours',
+        min: 0,
+        max: 1000000,
+      }),
+    );
+  }
+  // A text: the code the controller shows (E8, P1...), as the manual lists it.
+  specs.push(sensor(HP_KEYS.ERROR, 'text', 'text', { min: 0, max: 0 }));
   if (caps.unit) {
     specs.push(
       sensor(HP_KEYS.POWER_DRAW, 'energy-sensor', 'power', { unit: 'watt', min: 0, max: 30000 }),
@@ -292,6 +422,9 @@ export function heatPumpFeatureSpecs(record, language) {
         min: 0,
         max: 10000000,
       }),
+      // A plain counter: as an energy index, Gladys would count this heat as
+      // electricity in its energy views. The unit is in the name.
+      sensor(HP_KEYS.HEAT_PRODUCED, 'counter-sensor', 'integer', { min: 0, max: 10000000 }),
     );
   }
   return specs;
@@ -340,15 +473,40 @@ export function zoneMode(state, zone) {
 export const zoneTarget = (record, state, zone) =>
   record.caps.zones[zone].water ? state.zoneTargets[zone] : state.roomTarget;
 
+/** The operating state of a zone: idle when it is off or the unit runs elsewhere. */
+function zoneOperatingState(record, state, zone) {
+  if (!state[ZONES[zone].power]) {
+    return OPERATING_STATE.IDLE;
+  }
+  const running = record.unit ?? record.energy;
+  if (running?.heating) return OPERATING_STATE.HEATING;
+  if (running?.cooling) return OPERATING_STATE.COOLING;
+  return OPERATING_STATE.IDLE;
+}
+
 /** The value of every feature from the last readings, by feature key. */
-export function heatPumpValues(record) {
+export function heatPumpValues(record, language = 'en') {
   const state = record.state;
   if (!state) {
     return {};
   }
   const bool = (value) => (value ? 1 : 0);
+  const known = (value) => (value === undefined || value === null ? undefined : value);
   const unit = record.unit;
+  const silentLevel = record.silentLevel ?? (state.silent ? SILENT_LEVEL.SILENT : SILENT_LEVEL.OFF);
   const values = {
+    [HP_KEYS.DHW_HEATING]: unit ? bool(unit.heatingWater) : undefined,
+    [HP_KEYS.WATER_FLOW]: known(unit?.waterFlow),
+    [HP_KEYS.WATER_PRESSURE]: known(unit?.waterPressure),
+    [HP_KEYS.SUPER_SILENT]: bool(state.silent && silentLevel === SILENT_LEVEL.SUPER_SILENT),
+    [HP_KEYS.COMPRESSOR]: unit ? bool(unit.compressorFrequency > 0) : undefined,
+    [HP_KEYS.COMPRESSOR_RUN_TIME]: known(unit?.compressorRunTime),
+    [HP_KEYS.DEFROST]: unit ? bool(unit.defrost) : undefined,
+    [HP_KEYS.BACKUP_HEATER]: unit
+      ? bool(unit.backupHeater || record.energy?.backupHeater)
+      : undefined,
+    [HP_KEYS.ERROR]: errorDisplay(state.errorCode) ?? HP_NAMES[language]['no-error'],
+    [HP_KEYS.HEAT_PRODUCED]: known(record.energy?.producedEnergy),
     [HP_KEYS.DHW_POWER]: bool(state.dhwPower),
     [HP_KEYS.DHW_TARGET]: state.dhwTarget,
     [HP_KEYS.TANK_TEMPERATURE]: state.tankTemperature,
@@ -363,6 +521,8 @@ export function heatPumpValues(record) {
   ZONES.forEach((zone, index) => {
     values[zone.mode] = zoneMode(state, index) ?? undefined;
     values[zone.target] = zoneTarget(record, state, index);
+    values[zone.state] = unit ? zoneOperatingState(record, state, index) : undefined;
+    values[zone.curve] = bool(state[zone.curveFlag]);
   });
   return values;
 }
@@ -397,7 +557,9 @@ export function heatPumpCommand(record, key, value) {
   if (!Number.isFinite(number)) {
     throw new Error(`Invalid value ${value} for ${key}`);
   }
-  const zone = ZONES.findIndex((item) => item.mode === key || item.target === key);
+  const zone = ZONES.findIndex(
+    (item) => item.mode === key || item.target === key || item.curve === key,
+  );
   if (zone === 1 && !record.caps.doubleZone) {
     throw new Error('This heat pump has a single zone');
   }
@@ -409,6 +571,10 @@ export function heatPumpCommand(record, key, value) {
     if (number !== THERMOSTAT_MODE.OFF) {
       next.mode = MODE_FROM_GLADYS[number];
     }
+    return { basic: next };
+  }
+  if (zone >= 0 && ZONES[zone].curve === key) {
+    next[ZONES[zone].curveFlag] = number === 1;
     return { basic: next };
   }
   if (zone >= 0) {
@@ -436,7 +602,19 @@ export function heatPumpCommand(record, key, value) {
     case HP_KEYS.ECO:
       return { eco: number === 1 };
     case HP_KEYS.SILENT:
-      return { silentLevel: number === 1 ? SILENT_LEVEL.SILENT : SILENT_LEVEL.OFF };
+    case HP_KEYS.SUPER_SILENT: {
+      const current =
+        record.silentLevel ?? (record.state.silent ? SILENT_LEVEL.SILENT : SILENT_LEVEL.OFF);
+      let level;
+      if (key === HP_KEYS.SILENT) {
+        // Switching silent mode on keeps super silent if it was chosen.
+        level = number !== 1 ? SILENT_LEVEL.OFF : Math.max(current, SILENT_LEVEL.SILENT);
+      } else {
+        // Leaving super silent falls back to plain silent mode.
+        level = number === 1 ? SILENT_LEVEL.SUPER_SILENT : Math.min(current, SILENT_LEVEL.SILENT);
+      }
+      return { silentLevel: level };
+    }
     default:
       throw new Error(`The feature ${key} cannot be controlled`);
   }

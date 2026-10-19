@@ -157,7 +157,16 @@ async function probeHeatPump(lan) {
     answersBody(BODY_TYPE.UNIT),
     optional,
   );
+  // The two 32-bit counters (totalElectricity, totalThermal) have no unit
+  // midea-local vouches for: compare them with the energy consumed shown
+  // by the unit's own controller or app.
   say(`unit parameters: ${unit ? JSON.stringify(decodeC3Response(unit).unit) : 'no answer'}`);
+  const silence = await lan.request(
+    getQueryCommand(BODY_TYPE.SILENCE, { protocol }),
+    answersBody(BODY_TYPE.SILENCE),
+    optional,
+  );
+  say(`silent level: ${silence ? decodeC3Response(silence).silentLevel : 'no answer'}`);
 }
 
 try {

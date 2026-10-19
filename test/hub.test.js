@@ -317,7 +317,7 @@ test('triggers: the filter alert and a new error code fire once each', async (t)
     world.fake.sceneEvents.map(({ key, data }) => [key, data]),
     [
       [TRIGGERS.FILTER, { device }],
-      [TRIGGERS.ERROR, { device, error_code: 5 }],
+      [TRIGGERS.ERROR, { device, error_code: 5, error_display: '5' }],
     ],
   );
 });

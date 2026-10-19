@@ -403,6 +403,7 @@ const DEFAULT_HEAT_PUMP = {
   doubleZone: false,
   zoneWaterTemperature: [true, false],
   silent: false,
+  silentLevel: 0,
   eco: false,
   mode: 3,
   modeAuto: 3,
@@ -476,18 +477,57 @@ export function basicBody(state) {
 }
 
 /** The unit parameters body (type 0x10). */
-export function unitBody({ outdoor, waterIn, waterOut, watts }) {
+export function unitBody({
+  outdoor,
+  waterIn,
+  waterOut,
+  watts,
+  compressor = 40,
+  run = 0x10,
+  defrost = false,
+  backup = false,
+  flow = 152,
+  pressure = 180,
+}) {
   const body = new Array(1 + 190).fill(0);
   body[0] = 0x10;
-  body[1 + 0] = 40;
+  body[1 + 0] = compressor;
   body[1 + 7] = outdoor & 0xff;
   body[1 + 9] = waterIn;
   body[1 + 10] = waterOut;
-  body[1 + 30] = 0x10;
+  body[1 + 30] = run;
+  body[1 + 31] = defrost ? 0x80 : 0;
+  body[1 + 32] = backup ? 0x01 : 0;
+  body[1 + 54] = flow >> 8;
+  body[1 + 55] = flow & 0xff;
+  body[1 + 61] = pressure >> 8;
+  body[1 + 62] = pressure & 0xff;
   body[1 + 82] = watts >> 8;
   body[1 + 83] = watts & 0xff;
   return body;
 }
+
+/** The unit parameters notification body (notify1, type 0x05). */
+export function unitNotificationBody({ outdoor, waterIn, waterOut, watts, runTime }) {
+  const body = new Array(1 + 70).fill(0);
+  body[0] = 0x05;
+  body[1 + 0] = 40;
+  body[1 + 3] = outdoor & 0xff;
+  body[1 + 5] = waterIn;
+  body[1 + 6] = waterOut;
+  body[1 + 48] = watts >> 8;
+  body[1 + 49] = watts & 0xff;
+  body[1 + 56] = runTime >> 8;
+  body[1 + 57] = runTime & 0xff;
+  return body;
+}
+
+/** The silence answer body (type 0x05): level 1 or 3 as bits 0 and 3. */
+export const silenceBody = (level) => [
+  0x05,
+  level === 0 ? 0 : level === 3 ? 0x09 : 0x01,
+  ...new Array(9).fill(0),
+];
 
 /** The energy notification body (type 0x04). */
 export function energyBody(totalKwh, producedKwh = 0) {
@@ -502,12 +542,14 @@ export class FakeHeatPump extends FakeMidea {
    * @param {boolean} [options.unitAnswers] answers the unit parameters query
    * @param {boolean} [options.applianceAnswers] answers the appliance query
    * @param {boolean} [options.setAnswers] answers the set commands
+   * @param {boolean} [options.silenceAnswers] answers the silence query
    */
   constructor({
     state = {},
     unitAnswers = true,
     applianceAnswers = true,
     setAnswers = true,
+    silenceAnswers = true,
     ...options
   } = {}) {
     super({ ...options, type: 0xc3, caps: null });
@@ -516,6 +558,7 @@ export class FakeHeatPump extends FakeMidea {
     this.unitAnswers = unitAnswers;
     this.applianceAnswers = applianceAnswers;
     this.setAnswers = setAnswers;
+    this.silenceAnswers = silenceAnswers;
     this.frames = [];
   }
 
@@ -536,6 +579,9 @@ export class FakeHeatPump extends FakeMidea {
     }
     if (type === 0x03 && body[0] === 0x10) {
       return this.unitAnswers ? [c3Frame(0x03, unitBody(this.sensors))] : [];
+    }
+    if (type === 0x03 && body[0] === 0x05) {
+      return this.silenceAnswers ? [c3Frame(0x03, silenceBody(this.state.silentLevel))] : [];
     }
     if (type === 0x02 && body[0] === 0x01) {
       const powers = body[1];
@@ -560,6 +606,7 @@ export class FakeHeatPump extends FakeMidea {
     }
     if (type === 0x02 && body[0] === 0x05) {
       this.state.silent = body[1] !== 0;
+      this.state.silentLevel = body[1];
       return this.setAnswers ? [c3Frame(0x02, [0x05, body[1], 0, 0, 0, 0, 0, 0, 0, 0])] : [];
     }
     return [];

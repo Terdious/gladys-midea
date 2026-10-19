@@ -19,6 +19,13 @@ the notes of the version's GitHub Release.
   inlet and outlet temperatures, eco and silent modes, power draw and energy
   consumed. Setpoints stay within the limits the unit announces; the "Unit
   error" trigger covers heat pumps too (guim31/gladys-midea#5).
+- Heat pumps, beyond the Home Assistant integration's controls: operating
+  state of each zone, hot water heating, compressor, defrosting and backup
+  electric heater, water flow and pressure, compressor run time, heat
+  produced (for the COP), weather curve of each zone, super silent mode, and
+  the error code as the controller shows it (E8, P1...).
+- Trigger "Unit error": new variable `error_display`, the code the unit
+  shows.
 - Setting "Token and key typed by hand": the token and key of a V3 unit the
   Midea cloud gives no key for, as Home Assistant's Midea AC LAN keeps them.
 - `scripts/probe.mjs --host` reads a heat pump too, and takes a V3 token and
