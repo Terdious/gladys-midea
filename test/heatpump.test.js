@@ -558,7 +558,7 @@ test('the air conditioner widget and scene action say they are not for a heat pu
   const world = await createdWorld(t, { units: [pump] });
   const device = ids(world, pump).device;
   const widget = await world.fake.widgetGet('climate', { settings: { device }, language: 'fr' });
-  assert.match(widget.data.content.components[0].text, /pompe à chaleur/);
+  assert.match(widget.data.content.components[0].text, /faits? pour les climatiseurs/);
   const ack = await world.fake.sceneAction('set_climate', { device, mode: '2' });
   assert.equal(ack.success, false);
   assert.equal(pump.frames.filter((frame) => frame[9] === MESSAGE_TYPE.SET).length, 0);

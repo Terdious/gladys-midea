@@ -12,6 +12,12 @@ the notes of the version's GitHub Release.
 
 ### Added
 
+- Dehumidifiers (Midea appliance type `0xA1`: Midea, Comfee, Inventor...),
+  ported from midea-local: one Gladys device per unit with on/off, mode,
+  fan speed and target humidity (selection lists, as on the Tuya
+  integration), humidity, temperature, water tank level and tank full, child
+  lock, ionizer, swing and the drain pump when the unit has one. The "Filter
+  needs cleaning" trigger covers them; `scripts/probe.mjs --host` reads them.
 - Air-to-water heat pumps (Midea appliance type `0xC3`, "Heat Pump Wi-Fi
   Controller" such as the 171H120F), ported from midea-local: one Gladys device
   per heat pump with the mode and setpoint of each heating zone (thermostat),
@@ -34,6 +40,7 @@ the notes of the version's GitHub Release.
 ### Changed
 
 - The search report counts "Midea units" rather than air conditioners.
+- The search no longer reports dehumidifiers (0xA1) as "not supported".
 
 ## [1.0.1] - 2026-10-13
 
